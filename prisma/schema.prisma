@@ -1,0 +1,169 @@
+// TableTap - Prisma Schema
+// Using SQLite for zero-setup local dev. Swap provider to "postgresql" + DATABASE_URL when deploying.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Restaurant {
+  id                String     @id @default(cuid())
+  name              String
+  createdAt         DateTime   @default(now())
+  adminUsername     String     @default("admin")
+  adminPasswordHash String     @default("")
+  tables            Table[]
+  categories        Category[]
+  items             MenuItem[]
+}
+
+model Table {
+  id           String         @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  number       Int
+  // Combined-table billing: when set, this table is a MEMBER of a combined group and
+  // groupId points at the PRIMARY table's id (the smallest table number in the group).
+  // The primary table itself keeps groupId = null. All session/cart activity for any
+  // table in the group is resolved to the primary, so scanning any member's QR joins
+  // the same shared session/bill as the primary.
+  groupId      String?
+  sessions     TableSession[]
+
+  @@unique([restaurantId, number])
+  @@index([restaurantId])
+  @@index([groupId])
+}
+
+model TableSession {
+  id              String     @id @default(cuid())
+  tableId         String
+  table           Table      @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  status          String     @default("active") // active | bill_requested | completed
+  startedAt       DateTime   @default(now())
+  billRequestedAt DateTime?
+  closedAt        DateTime?
+  orders          Order[]
+  cartItems       CartItem[]
+  reviews         Review[]
+
+  @@index([tableId])
+  @@index([status])
+}
+
+model Category {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  sortOrder    Int        @default(0)
+  // Soft-delete: a category with any items that have order history can't be hard-deleted
+  // (those items must stay in the DB for order history), so it's archived instead.
+  archived     Boolean    @default(false)
+  items        MenuItem[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId])
+}
+
+model MenuItem {
+  id           String      @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  categoryId   String
+  category     Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  price        Float
+  veg          Boolean     @default(true)
+  available    Boolean     @default(true)
+  isBestseller Boolean     @default(false)
+  // Soft-delete: items that have already been ordered can't be hard-deleted (their
+  // OrderItem rows reference them for order-history display), so "delete" archives
+  // them instead — hidden from the customer menu and admin menu editor, but past
+  // orders still show their name/price correctly via the OrderItem snapshot.
+  archived     Boolean     @default(false)
+  orderItems   OrderItem[]
+  cartItems    CartItem[]
+
+  @@index([restaurantId])
+  @@index([categoryId])
+}
+
+model Order {
+  id        String       @id @default(cuid())
+  sessionId String
+  session   TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  status    String       @default("pending") // pending | accepted | preparing | ready | served | cancelled
+  createdAt DateTime     @default(now())
+  // Soft-delete: admin can remove an order from the active/history views without losing
+  // the audit trail — deleted orders remain queryable via the "deleted history" view.
+  deletedAt DateTime?
+  items     OrderItem[]
+
+  @@index([sessionId])
+  @@index([status])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  name       String?  // Price snapshot: frozen item name at order time
+  price      Float?   // Price snapshot: frozen item price at order time
+  quantity   Int      @default(1)
+  addedBy    String?
+  notes      String?
+  status     String   @default("pending") // pending | accepted | rejected | cancelled | cancellation_requested
+  cancelReqAt DateTime?
+
+  @@index([orderId])
+  @@index([menuItemId])
+}
+
+model CartItem {
+  id         String       @id @default(cuid())
+  sessionId  String
+  session    TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem     @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  quantity   Int          @default(1)
+  addedBy    String?
+  notes      String?
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([sessionId, menuItemId])
+  @@index([sessionId])
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  restaurantId String
+  type         String // new_order | cancel_request | bill_request | new_session
+  message      String
+  tableNumber  Int?
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([restaurantId])
+  @@index([restaurantId, read])
+}
+
+model Review {
+  id        String       @id @default(cuid())
+  sessionId String
+  session   TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  rating    Int // 1-5
+  comment   String?
+  createdAt DateTime     @default(now())
+
+  @@index([sessionId])
+}
+
+
