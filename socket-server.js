@@ -58,7 +58,7 @@ app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
-const PORT = process.env.SOCKET_PORT || 4000;
+const PORT = process.env.PORT || process.env.SOCKET_PORT || 4000;
 server.listen(PORT, () => {
   console.log(`TableTap socket server listening on http://localhost:${PORT}`);
 });
