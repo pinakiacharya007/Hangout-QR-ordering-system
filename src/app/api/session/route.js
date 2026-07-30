@@ -49,6 +49,11 @@ async function sweepStaleEmptySessions(restaurantId) {
 const SESSION_INCLUDE = {
   table: true,
   cartItems: { include: { menuItem: true }, orderBy: { updatedAt: "asc" } },
+  orders: {
+    where: { status: { not: "cancelled" } },
+    include: { items: { include: { menuItem: true } } },
+    orderBy: { createdAt: "desc" },
+  },
 };
 
 const ADMIN_SESSION_INCLUDE = {

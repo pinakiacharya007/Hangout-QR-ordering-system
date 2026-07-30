@@ -123,6 +123,7 @@ export default function CustomerMenuPage() {
     setCurrentTableNumber(table);
     setBillRequested(newSession.status === "bill_requested");
     setCartItems(newSession.cartItems || []);
+    setOrders(newSession.orders || []);
     setSessionStage("ready");
     try {
       sessionStorage.setItem(storageKey(), newSession.id);
