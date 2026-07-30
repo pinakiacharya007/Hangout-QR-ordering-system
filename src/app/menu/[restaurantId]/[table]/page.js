@@ -205,6 +205,21 @@ export default function CustomerMenuPage() {
       s.emit("join", `restaurant-${restaurantId}`);
       s.emit("join", `table-${session.id}`);
       console.log(`[socket] ✅ Joined rooms: restaurant-${restaurantId}, table-${session.id}`);
+
+      // Catch up on anything that happened while disconnected (screen lock, tab
+      // backgrounded, brief network drop, reconnect after cold start) — pull fresh
+      // state so a missed event doesn't leave the screen stale until a manual refresh.
+      fetch(`/api/session?restaurantId=${restaurantId}&tableNumber=${table}`)
+        .then((r) => r.json())
+        .then((d) => {
+          const match = (d.activeSessions || []).find((s2) => s2.id === session.id);
+          if (match) {
+            setOrders(match.orders || []);
+            setCartItems(match.cartItems || []);
+            setBillRequested(match.status === "bill_requested");
+          }
+        })
+        .catch(() => {});
     });
 
     s.on("connect_error", (error) => {
