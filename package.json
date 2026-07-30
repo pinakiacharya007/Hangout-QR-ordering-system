@@ -8,6 +8,7 @@
     "start": "next start",
     "socket": "node socket-server.js",
     "seed": "node prisma/seed.js",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push"
   },
