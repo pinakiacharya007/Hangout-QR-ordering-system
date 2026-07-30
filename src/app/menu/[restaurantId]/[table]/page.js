@@ -41,17 +41,16 @@ export default function CustomerMenuPage() {
 
   // 0. Detect local network IP for socket connection (local network support)
   useEffect(() => {
-    fetch("/api/localip")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.localIp && d.localIp !== "localhost") {
-          // Use local IP for socket connection (enables cross-device on same network)
-          SOCKET_URL = `http://${d.localIp}:4000`;
-        }
-      })
-      .catch(() => {
-        // Fall back to environment variable or localhost
-      });
+    if (process.env.NODE_ENV !== "production") {
+      fetch("/api/localip")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.localIp && d.localIp !== "localhost") {
+            SOCKET_URL = `http://${d.localIp}:4000`;
+          }
+        })
+        .catch(() => {});
+    }
   }, []);
 
   const initRef = useRef(false);
