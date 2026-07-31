@@ -235,6 +235,15 @@ export default function AdminDashboard() {
     return true;
   }
 
+  async function markLentReturned(sessionId) {
+    const res = await fetch("/api/session", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, action: "mark_lent_returned" }),
+    });
+    if (res.ok) loadRevenue(revenueRange);
+  }
+
   // Moves an ENTIRE session (customer's whole running bill, all their orders) to
   // another table — for when a customer/party physically relocates tables.
   async function transferSession(sessionId, currentTableNumber) {
@@ -599,8 +608,8 @@ export default function AdminDashboard() {
 
               return (
                 <div key={t.id} style={{ marginBottom: 16 }}>
-                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8 }}>
-                    Table {t.number}
+                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8, color: t.isParcel ? "var(--orange-700, #b45f14)" : "inherit" }}>
+                    {t.isParcel ? "📦 Parcels" : `Table ${t.number}`}
                     {activeSessions.length > 1 && (
                       <span style={{ fontWeight: 700, fontSize: 12, color: "var(--muted)", marginLeft: 8 }}>
                         {activeSessions.length} separate bills
@@ -611,7 +620,7 @@ export default function AdminDashboard() {
                   {activeSessions.length === 0 && (
                     <div className="table-session-card">
                       <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 0" }}>
-                        No active guests currently at Table {t.number}.
+                        {t.isParcel ? "No parcel orders right now." : `No active guests currently at Table ${t.number}.`}
                       </div>
                     </div>
                   )}
@@ -644,6 +653,11 @@ export default function AdminDashboard() {
                             </span>
                           </div>
 
+                          {t.isParcel && session.parcelLabel && (
+                            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--orange-700, #b45f14)", margin: "0 0 6px" }}>
+                              📦 {session.parcelLabel}
+                            </p>
+                          )}
                           <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 10px" }}>
                             Orders placed: <strong>{tableOrders.length}</strong>
                             {cartCount > 0 && <> · {cartCount} item{cartCount > 1 ? "s" : ""} still in cart</>}
@@ -872,11 +886,25 @@ export default function AdminDashboard() {
 
                 {revenue.lentBreakdown?.length > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>LENT TO</div>
-                    {revenue.lentBreakdown.map((l, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13.5 }}>
-                        <span style={{ fontWeight: 600 }}>{l.name}</span>
-                        <span style={{ fontWeight: 700, color: "var(--nonveg)" }}>₹{l.amount.toLocaleString()}</span>
+                    <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>OUTSTANDING — LENT TO</div>
+                    {revenue.lentBreakdown.map((l) => (
+                      <div key={l.sessionId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--blue-100)" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13.5 }}>{l.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                            {l.closedAt ? new Date(l.closedAt).toLocaleDateString() : ""}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontWeight: 700, color: "var(--nonveg)" }}>₹{l.amount.toLocaleString()}</span>
+                          <button
+                            className="secondary-btn"
+                            style={{ padding: "4px 10px", fontSize: 11.5 }}
+                            onClick={() => markLentReturned(l.sessionId)}
+                          >
+                            ✓ Returned
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -944,11 +972,13 @@ export default function AdminDashboard() {
 
 function DeletedOrderCard({ order }) {
   const table = order.session?.table?.number;
+  const isParcel = order.session?.table?.isParcel;
+  const parcelLabel = order.session?.parcelLabel;
   const total = order.items.reduce((sum, i) => sum + (i.price ?? i.menuItem?.price ?? 0) * i.quantity, 0);
   return (
     <div className="order-card" style={{ opacity: 0.75 }}>
       <div className="order-card-top">
-        <span className="order-table-num">Table {table}</span>
+        <span className="order-table-num">{isParcel ? `📦 Parcel${parcelLabel ? " — " + parcelLabel : ""}` : `Table ${table}`}</span>
         <span className="order-time">{new Date(order.createdAt).toLocaleTimeString()}</span>
       </div>
       <div style={{ fontSize: 12, color: "var(--red-600, #dc2626)", fontWeight: 700, marginBottom: 6 }}>
@@ -969,6 +999,8 @@ function DeletedOrderCard({ order }) {
 
 function OrderCard({ order, isNew, onUpdate, onItemUpdate, onTransfer, onDelete }) {
   const table = order.session?.table?.number;
+  const isParcel = order.session?.table?.isParcel;
+  const parcelLabel = order.session?.parcelLabel;
   const nextAction = {
     pending: { label: "Accept Order", status: "accepted", cls: "btn-accept" },
     accepted: { label: "Start Preparing", status: "preparing", cls: "btn-preparing" },
@@ -990,7 +1022,7 @@ function OrderCard({ order, isNew, onUpdate, onItemUpdate, onTransfer, onDelete 
   return (
     <div className={`order-card ${isNew ? "is-new" : ""}`}>
       <div className="order-card-top">
-        <span className="order-table-num">Table {table}</span>
+        <span className="order-table-num">{isParcel ? `📦 Parcel${parcelLabel ? " — " + parcelLabel : ""}` : `Table ${table}`}</span>
         <span className="order-time">{new Date(order.createdAt).toLocaleTimeString()}</span>
       </div>
 
@@ -1180,6 +1212,31 @@ function QrTab({ origin, localIp, restaurantId, allTables, onTablesChange }) {
     }
   }
 
+  async function addParcelTable() {
+    const hasParcel = allTables.some((t) => t.isParcel);
+    if (hasParcel) return alert("A Parcels table already exists — only one is needed.");
+    const nextNum = allTables.length > 0 ? Math.max(...allTables.map((t) => t.number)) + 1 : 1;
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/tables", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restaurantId, tableNumber: nextNum, isParcel: true }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        onTablesChange();
+      } else {
+        alert(data.error || "Failed to add Parcels table");
+      }
+    } catch (err) {
+      alert("Error adding Parcels table");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function deleteTable(tableId) {
     if (!confirm("Are you sure? This will delete all orders and sessions for this table.")) return;
 
@@ -1215,6 +1272,15 @@ function QrTab({ origin, localIp, restaurantId, allTables, onTablesChange }) {
           <button onClick={addTable} disabled={loading} style={{ fontWeight: 800 }}>
             {loading ? "Adding..." : "+ Add Table"}
           </button>
+          {!allTables.some((t) => t.isParcel) && (
+            <button
+              onClick={addParcelTable}
+              disabled={loading}
+              style={{ fontWeight: 800, background: "var(--orange-500, #ea7c1f)", color: "#fff" }}
+            >
+              📦 Add Parcels Table
+            </button>
+          )}
         </div>
 
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1244,20 +1310,20 @@ function QrTab({ origin, localIp, restaurantId, allTables, onTablesChange }) {
                   key={t.id}
                   style={{
                     padding: 12,
-                    border: "1px solid var(--blue-200)",
+                    border: t.isParcel ? "1px solid var(--orange-400, #f0a35c)" : "1px solid var(--blue-200)",
                     borderRadius: 12,
                     display: "flex",
                     flexDirection: "column",
                     gap: 8,
-                    backgroundColor: "var(--blue-50)",
+                    backgroundColor: t.isParcel ? "var(--orange-50, #fef3e8)" : "var(--blue-50)",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: 15 }}>
-                      {!t.groupId && (
+                      {!t.groupId && !t.isParcel && (
                         <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} />
                       )}
-                      Table {t.number}
+                      {t.isParcel ? "📦 Parcels" : `Table ${t.number}`}
                     </label>
                     <button
                       onClick={() => deleteTable(t.id)}
@@ -1319,10 +1385,14 @@ function QrTab({ origin, localIp, restaurantId, allTables, onTablesChange }) {
                 const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
                 const members = membersOf(t);
                 return (
-                  <div key={t.id} className="qr-card">
-                    <img src={qrImg} alt={`Table ${t.number} QR`} />
-                    <div style={{ fontWeight: 800, fontSize: 15, color: "var(--navy-900)", marginBottom: 4 }}>
-                      Table {t.number}
+                  <div
+                    key={t.id}
+                    className="qr-card"
+                    style={t.isParcel ? { border: "2px solid var(--orange-400, #f0a35c)", background: "var(--orange-50, #fef3e8)" } : undefined}
+                  >
+                    <img src={qrImg} alt={t.isParcel ? "Parcels QR" : `Table ${t.number} QR`} />
+                    <div style={{ fontWeight: 800, fontSize: 15, color: t.isParcel ? "var(--orange-700, #b45f14)" : "var(--navy-900)", marginBottom: 4 }}>
+                      {t.isParcel ? "📦 Parcels" : `Table ${t.number}`}
                       {members.length > 0 && ` (+ Table ${members.map((m) => m.number).join(", ")})`}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", wordBreak: "break-all" }}>{url}</div>

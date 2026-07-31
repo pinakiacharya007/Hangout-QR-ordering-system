@@ -1,5 +1,5 @@
 // TableTap - Prisma Schema
-// Using SQLite for zero-setup local dev. Swap provider to "postgresql" + DATABASE_URL when deploying.
+// Postgres (Neon) in production.
 
 generator client {
   provider = "prisma-client-js"
@@ -26,13 +26,15 @@ model Table {
   restaurantId String
   restaurant   Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   number       Int
-  isParcel     Boolean        @default(false)
   // Combined-table billing: when set, this table is a MEMBER of a combined group and
   // groupId points at the PRIMARY table's id (the smallest table number in the group).
   // The primary table itself keeps groupId = null. All session/cart activity for any
   // table in the group is resolved to the primary, so scanning any member's QR joins
   // the same shared session/bill as the primary.
   groupId      String?
+  // One shared QR for all phone-in/parcel orders — always starts a brand-new session
+  // per scan (never joins an existing one) and requires a label to tell orders apart.
+  isParcel     Boolean        @default(false)
   sessions     TableSession[]
 
   @@unique([restaurantId, number])
@@ -48,11 +50,16 @@ model TableSession {
   startedAt       DateTime   @default(now())
   billRequestedAt DateTime?
   closedAt        DateTime?
+  // Set at checkout (admin dashboard)
+  paymentMethod   String?    // "cash" | "upi" | "lend"
+  lentToName      String?    // customer's name, only when paymentMethod = "lend"
+  lentReturned    Boolean    @default(false) // marked true once a lent bill is paid back
+  // Set via the Parcels QR flow — distinguishes concurrent phone-in orders that all
+  // share the same table/QR.
+  parcelLabel     String?
   orders          Order[]
   cartItems       CartItem[]
   reviews         Review[]
-  paymentMethod   String?   // "cash" | "upi" | "lend" — set at checkout
-  lentToName      String?   // customer's name, only when paymentMethod = "lend"
 
   @@index([tableId])
   @@index([status])
@@ -113,17 +120,17 @@ model Order {
 }
 
 model OrderItem {
-  id         String   @id @default(cuid())
-  orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItemId String
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
-  name       String?  // Price snapshot: frozen item name at order time
-  price      Float?   // Price snapshot: frozen item price at order time
-  quantity   Int      @default(1)
-  addedBy    String?
-  notes      String?
-  status     String   @default("pending") // pending | accepted | rejected | cancelled | cancellation_requested
+  id          String    @id @default(cuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId  String
+  menuItem    MenuItem  @relation(fields: [menuItemId], references: [id])
+  name        String?   // Price snapshot: frozen item name at order time
+  price       Float?    // Price snapshot: frozen item price at order time
+  quantity    Int       @default(1)
+  addedBy     String?
+  notes       String?
+  status      String    @default("pending") // pending | accepted | rejected | cancelled | cancellation_requested
   cancelReqAt DateTime?
 
   @@index([orderId])
@@ -168,5 +175,3 @@ model Review {
 
   @@index([sessionId])
 }
-
-

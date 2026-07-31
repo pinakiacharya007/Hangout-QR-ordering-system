@@ -52,7 +52,7 @@ export async function GET(req) {
     const bucketTotals = {};
     const itemTotals = {};
     const paymentTotals = { cash: 0, upi: 0, lend: 0, unspecified: 0 };
-    const lentTo = {};
+    const outstandingLent = []; // individual unreturned lend sessions
 
     for (const session of sessions) {
       let sessionTotal = 0;
@@ -75,8 +75,14 @@ export async function GET(req) {
       total += sessionTotal;
       const method = session.paymentMethod || "unspecified";
       paymentTotals[method] = (paymentTotals[method] || 0) + sessionTotal;
-      if (method === "lend" && session.lentToName) {
-        lentTo[session.lentToName] = (lentTo[session.lentToName] || 0) + sessionTotal;
+
+      if (method === "lend" && !session.lentReturned) {
+        outstandingLent.push({
+          sessionId: session.id,
+          name: session.lentToName || "Unknown",
+          amount: sessionTotal,
+          closedAt: session.closedAt,
+        });
       }
 
       const bucketKey =
@@ -102,9 +108,18 @@ export async function GET(req) {
     }
 
     const topItems = Object.values(itemTotals).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-    const lentBreakdown = Object.entries(lentTo).map(([name, amount]) => ({ name, amount }));
 
-    return NextResponse.json({ total, orderCount, range, start, end, buckets, topItems, paymentTotals, lentBreakdown });
+    return NextResponse.json({
+      total,
+      orderCount,
+      range,
+      start,
+      end,
+      buckets,
+      topItems,
+      paymentTotals,
+      lentBreakdown: outstandingLent,
+    });
   } catch (err) {
     console.error("GET /api/revenue error:", err);
     return NextResponse.json({ error: err.message || "Failed to compute revenue" }, { status: 500 });

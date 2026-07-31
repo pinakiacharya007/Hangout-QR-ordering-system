@@ -1209,7 +1209,9 @@ button:disabled {
 
 .review-box .secondary-btn {
   margin-top: 8px;
-}.splash-logo-pulse {
+}
+/* Splash loading animation (customer page "checking" stage) */
+.splash-logo-pulse {
   width: 72px;
   height: 72px;
   border-radius: 50%;

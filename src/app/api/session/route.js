@@ -46,6 +46,8 @@ async function sweepStaleEmptySessions(restaurantId) {
   }
 }
 
+// Includes order history so a customer-facing page load/refresh always recovers correct
+// state from the DB regardless of whether a live socket event was ever received.
 const SESSION_INCLUDE = {
   table: true,
   cartItems: { include: { menuItem: true }, orderBy: { updatedAt: "asc" } },
@@ -65,8 +67,8 @@ const ADMIN_SESSION_INCLUDE = {
   },
 };
 
-// GET /api/session?restaurantId=X&tableNumber=Y  -> { activeSessions } for that table (customer)
-// GET /api/session?restaurantId=X                -> { tables }         for the whole venue (admin)
+// GET /api/session?restaurantId=X&tableNumber=Y  -> { activeSessions, isParcel } for that table (customer)
+// GET /api/session?restaurantId=X                -> { tables }                   for the whole venue (admin)
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -84,7 +86,7 @@ export async function GET(req) {
 
       if (!table) {
         // No table row yet — first scan at this table number, nothing active.
-        return NextResponse.json({ activeSessions: [] });
+        return NextResponse.json({ activeSessions: [], isParcel: false });
       }
 
       const activeSessions = await prisma.tableSession.findMany({
@@ -93,7 +95,7 @@ export async function GET(req) {
         orderBy: { startedAt: "asc" },
       });
 
-      return NextResponse.json({ activeSessions });
+      return NextResponse.json({ activeSessions, isParcel: !!table.isParcel });
     }
 
     // No tableNumber -> admin dashboard's full table overview
@@ -165,9 +167,12 @@ export async function POST(req) {
 }
 
 // PATCH /api/session
-//   { sessionId }                                   -> admin checkout (close table)
-//   { sessionId, action: "request_bill" }            -> customer requests the bill
-//   { sessionId, action: "transfer", tableNumber }   -> admin moves the whole session to a new table
+//   { sessionId }                                             -> admin checkout (close table)
+//   { sessionId, paymentMethod, lentToName }                  -> admin checkout with payment info
+//   { sessionId, action: "request_bill" }                      -> customer requests the bill
+//   { sessionId, action: "transfer", tableNumber }             -> admin moves the whole session to a new table
+//   { sessionId, action: "set_parcel_label", parcelLabel }     -> label a parcel order (Parcels QR flow)
+//   { sessionId, action: "mark_lent_returned" }                -> admin marks a lent bill as paid back
 export async function PATCH(req) {
   try {
     const body = await req.json();
@@ -219,7 +224,31 @@ export async function PATCH(req) {
       return NextResponse.json({ session });
     }
 
-    // Default: admin checkout — close the table and clear whatever's left in the cart
+    if (action === "set_parcel_label") {
+      const { parcelLabel } = body || {};
+      if (!parcelLabel || !parcelLabel.trim()) {
+        return NextResponse.json({ error: "parcelLabel is required" }, { status: 400 });
+      }
+      const session = await prisma.tableSession.update({
+        where: { id: sessionId },
+        data: { parcelLabel: parcelLabel.trim() },
+        include: SESSION_INCLUDE,
+      });
+      await emitToRoom(`restaurant-${restaurantId}`, "table-updated", {});
+      return NextResponse.json({ session });
+    }
+
+    if (action === "mark_lent_returned") {
+      const session = await prisma.tableSession.update({
+        where: { id: sessionId },
+        data: { lentReturned: true },
+        include: SESSION_INCLUDE,
+      });
+      return NextResponse.json({ session });
+    }
+
+    // Default: admin checkout — close the table, record how it was paid, and clear
+    // whatever's left in the cart.
     const { paymentMethod, lentToName } = body || {};
     if (paymentMethod && !["cash", "upi", "lend"].includes(paymentMethod)) {
       return NextResponse.json({ error: "Invalid paymentMethod" }, { status: 400 });

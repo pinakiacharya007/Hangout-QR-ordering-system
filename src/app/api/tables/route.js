@@ -23,13 +23,25 @@ export async function GET(req) {
   }
 }
 
-// POST /api/tables { restaurantId, tableNumber }
+// POST /api/tables { restaurantId, tableNumber, isParcel? }
 export async function POST(req) {
   try {
-    const { restaurantId, tableNumber } = await req.json();
+    const { restaurantId, tableNumber, isParcel } = await req.json();
 
     if (!restaurantId || !tableNumber) {
       return NextResponse.json({ error: "restaurantId and tableNumber are required" }, { status: 400 });
+    }
+
+    // Only one Parcels table is meaningful per restaurant — enforce it here rather
+    // than relying on the admin UI to hide the option correctly every time.
+    if (isParcel) {
+      const existingParcel = await prisma.table.findFirst({ where: { restaurantId, isParcel: true } });
+      if (existingParcel) {
+        return NextResponse.json(
+          { error: `A Parcels table already exists (Table ${existingParcel.number}) — only one is needed.` },
+          { status: 400 }
+        );
+      }
     }
 
     // Check if table already exists
@@ -42,7 +54,7 @@ export async function POST(req) {
     }
 
     const table = await prisma.table.create({
-      data: { restaurantId, number: Number(tableNumber) },
+      data: { restaurantId, number: Number(tableNumber), isParcel: !!isParcel },
     });
 
     return NextResponse.json({ table });

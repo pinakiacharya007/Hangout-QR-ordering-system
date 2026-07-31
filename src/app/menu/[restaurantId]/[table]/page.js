@@ -29,6 +29,9 @@ export default function CustomerMenuPage() {
   const [isOwner, setIsOwner] = useState(true);
   const [askingName, setAskingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [isParcelTable, setIsParcelTable] = useState(false);
+  const [askingParcelLabel, setAskingParcelLabel] = useState(false);
+  const [parcelLabelDraft, setParcelLabelDraft] = useState("");
 
   // "checking" -> looking for existing sessions at this table
   // "choosing" -> multiple/one session already active here, customer must pick join/new
@@ -39,7 +42,7 @@ export default function CustomerMenuPage() {
   const [billRequested, setBillRequested] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
-  // 0. Detect local network IP for socket connection (local network support)
+  // 0. Detect local network IP for socket connection — dev/LAN-testing only, never in prod
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") {
       fetch("/api/localip")
@@ -96,6 +99,15 @@ export default function CustomerMenuPage() {
       const data = await res.json();
       const options = data.activeSessions || [];
 
+      if (data.isParcel) {
+        // Every scan of the Parcels QR is an independent order — never rejoin an
+        // existing session/cart here, and always ask for a label so the admin can
+        // tell concurrent parcel orders apart on the dashboard.
+        setIsParcelTable(true);
+        await startNewSession({ isParcel: true });
+        return;
+      }
+
       if (savedSessionId) {
         const match = options.find((s) => s.id === savedSessionId);
         if (match) {
@@ -120,13 +132,23 @@ export default function CustomerMenuPage() {
     }
   }, [restaurantId, table]);
 
-  function applySession(newSession) {
+  function applySession(newSession, opts = {}) {
     setSession(newSession);
     setCurrentTableNumber(table);
     setBillRequested(newSession.status === "bill_requested");
     setCartItems(newSession.cartItems || []);
     setOrders(newSession.orders || []);
     setSessionStage("ready");
+
+    if (opts.isParcel) {
+      setName("Guest");
+      setAskingParcelLabel(true);
+      try {
+        sessionStorage.setItem(storageKey(), newSession.id);
+      } catch (e) {}
+      return;
+    }
+
     try {
       sessionStorage.setItem(storageKey(), newSession.id);
       const savedName = sessionStorage.getItem(nameKey());
@@ -136,7 +158,7 @@ export default function CustomerMenuPage() {
     }
   }
 
-  async function startNewSession() {
+  async function startNewSession(opts = {}) {
     const res = await fetch("/api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -148,7 +170,7 @@ export default function CustomerMenuPage() {
       try {
         sessionStorage.setItem(roleKey(), "owner");
       } catch (e) {}
-      applySession(data.session);
+      applySession(data.session, opts);
     }
   }
 
@@ -205,8 +227,7 @@ export default function CustomerMenuPage() {
       console.log(`[socket] ✅ Joined rooms: restaurant-${restaurantId}, table-${session.id}`);
 
       // Catch up on anything that happened while disconnected (screen lock, tab
-      // backgrounded, brief network drop, reconnect after cold start) — pull fresh
-      // state so a missed event doesn't leave the screen stale until a manual refresh.
+      // backgrounded, brief network drop, reconnect after cold start).
       fetch(`/api/session?restaurantId=${restaurantId}&tableNumber=${table}`)
         .then((r) => r.json())
         .then((d) => {
@@ -430,7 +451,7 @@ export default function CustomerMenuPage() {
 
   const activeOrders = orders.filter((o) => o.status !== "served" && o.status !== "cancelled");
 
- if (sessionStage === "checking") {
+  if (sessionStage === "checking") {
     return (
       <div className="container" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 16 }}>
         <div className="splash-logo-pulse">
@@ -496,7 +517,7 @@ export default function CustomerMenuPage() {
     );
   }
 
-  if (askingName) {
+  if (askingParcelLabel) {
     return (
       <div className="container">
         <div className="topbar">
@@ -507,41 +528,38 @@ export default function CustomerMenuPage() {
             </div>
             Hangout Restro Cafe
           </div>
-          <div className="table-chip">Table {currentTableNumber}</div>
+          <div className="table-chip" style={{ background: "var(--orange-500, #ea7c1f)", color: "#fff" }}>📦 Parcel</div>
         </div>
         <div style={{ padding: 20 }}>
-          <p style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>What should we call you?</p>
+          <p style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Who's this parcel for?</p>
           <p style={{ fontSize: 13, color: "var(--muted, #837568)", marginBottom: 16 }}>
-            So everyone at the table can see who added what to the shared cart.
+            Add a name or phone number so the kitchen can tell parcel orders apart.
           </p>
           <input
             className="cart-name-input"
-            placeholder="Your name"
-            value={nameDraft}
-            onChange={(e) => setNameDraft(e.target.value)}
+            placeholder="e.g. Rahul / 98765xxxxx"
+            value={parcelLabelDraft}
+            onChange={(e) => setParcelLabelDraft(e.target.value)}
+            autoFocus
             style={{ width: "100%", padding: 12, borderRadius: 12, border: "1.5px solid var(--blue-200)", marginBottom: 12 }}
           />
           <button
             className="primary-btn"
-            onClick={() => {
-              const finalName = nameDraft.trim() || "Guest";
-              setName(finalName);
-              try {
-                sessionStorage.setItem(nameKey(), finalName);
-              } catch (e) {}
-              setAskingName(false);
+            disabled={!parcelLabelDraft.trim()}
+            onClick={async () => {
+              const label = parcelLabelDraft.trim();
+              if (!label || !session) return;
+              await fetch("/api/session", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sessionId: session.id, action: "set_parcel_label", parcelLabel: label }),
+              });
+              setSession((prev) => (prev ? { ...prev, parcelLabel: label } : prev));
+              setName(label);
+              setAskingParcelLabel(false);
             }}
           >
-            Continue
-          </button>
-          <button
-            className="secondary-btn"
-            onClick={() => {
-              setName("Guest");
-              setAskingName(false);
-            }}
-          >
-            Skip for now
+            Continue to Menu
           </button>
         </div>
       </div>
