@@ -48,6 +48,7 @@ export default function CustomerMenuPage() {
   // typing isn't interrupted by incoming "cart-updated" socket events).
   const [openNotesFor, setOpenNotesFor] = useState(null); // menuItemId | null
   const [noteDrafts, setNoteDrafts] = useState({}); // { [menuItemId]: string }
+  const pendingCartSaves = useRef({}); // { [menuItemId]: Promise } — in-flight instruction saves
 
   // "checking" -> looking for existing sessions at this table
   // "choosing" -> multiple/one session already active here, customer must pick join/new
@@ -397,27 +398,35 @@ export default function CustomerMenuPage() {
   }
 
   // Persists a cart line's special instructions (delta: 0 leaves quantity untouched).
-  async function updateNotes(menuItemId, notes) {
-    if (!session) return;
-    try {
-      const res = await fetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: session.id,
-          menuItemId,
-          delta: 0,
-          addedBy: name || "Guest",
-          notes,
-        }),
-      });
-      const data = await res.json();
-      if (data.cartItems) {
-        setCartItems(data.cartItems);
+  // Returns the fetch promise, and also stores it in pendingCartSaves so placeOrder()
+  // can wait for any in-flight instruction save before it reads cartItems — otherwise
+  // tapping a chip and immediately hitting "Place Order" can place the order using the
+  // stale (pre-chip) cart snapshot, silently dropping the instructions.
+  function updateNotes(menuItemId, notes) {
+    if (!session) return Promise.resolve();
+    const promise = (async () => {
+      try {
+        const res = await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: session.id,
+            menuItemId,
+            delta: 0,
+            addedBy: name || "Guest",
+            notes,
+          }),
+        });
+        const data = await res.json();
+        if (data.cartItems) {
+          setCartItems(data.cartItems);
+        }
+      } catch (err) {
+        console.error("Failed to update instructions:", err);
       }
-    } catch (err) {
-      console.error("Failed to update instructions:", err);
-    }
+    })();
+    pendingCartSaves.current[menuItemId] = promise;
+    return promise;
   }
 
   // Toggles a preset phrase (e.g. "More Spicy") in a cart line's instructions text.
@@ -436,7 +445,25 @@ export default function CustomerMenuPage() {
   async function placeOrder() {
     if (!cartCount || !session || !isOwner) return;
     setPlacing(true);
-    const items = cartItems.map((ci) => ({
+
+    // Make sure any in-flight "chip tap" instruction saves have actually landed on the
+    // server, then pull one guaranteed-fresh copy of the cart — closes the race where
+    // tapping a preset and immediately hitting "Place Order" could submit stale (pre-tap)
+    // cart data and silently drop the instructions.
+    let latestCartItems = cartItems;
+    try {
+      await Promise.all(Object.values(pendingCartSaves.current));
+      const freshRes = await fetch(`/api/cart?sessionId=${session.id}`);
+      const freshData = await freshRes.json();
+      if (freshData.cartItems) {
+        latestCartItems = freshData.cartItems;
+        setCartItems(freshData.cartItems);
+      }
+    } catch (err) {
+      console.error("Failed to refresh cart before placing order:", err);
+    }
+
+    const items = latestCartItems.map((ci) => ({
       menuItemId: ci.menuItemId,
       quantity: ci.quantity,
       addedBy: name || ci.addedBy || "Guest",
