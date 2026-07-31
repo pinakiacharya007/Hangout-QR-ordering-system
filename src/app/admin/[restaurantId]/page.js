@@ -42,6 +42,7 @@ export default function AdminDashboard() {
   const [checkoutSessionId, setCheckoutSessionId] = useState(null);
   const [revenueRange, setRevenueRange] = useState("day");
   const [revenue, setRevenue] = useState(null);
+  const [menuSearchQuery, setMenuSearchQuery] = useState("");
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -363,6 +364,20 @@ export default function AdminDashboard() {
       day: "numeric",
     });
   }
+
+  const menuSearchQueryNormalized = menuSearchQuery.trim().toLowerCase();
+  const filteredMenuCategories = menuSearchQueryNormalized
+    ? categories
+        .map((cat) => ({
+          ...cat,
+          items: cat.items.filter(
+            (item) =>
+              item.name.toLowerCase().includes(menuSearchQueryNormalized) ||
+              (item.description || "").toLowerCase().includes(menuSearchQueryNormalized)
+          ),
+        }))
+        .filter((cat) => cat.items.length > 0)
+    : categories;
 
   return (
     <div className="admin-body">
@@ -747,8 +762,47 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               </div>
+
+              <div style={{ marginLeft: 24 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Search Items</div>
+                <div style={{ position: "relative" }}>
+                  <input
+                    id="menu-search"
+                    placeholder="Search by name or description…"
+                    value={menuSearchQuery}
+                    onChange={(e) => setMenuSearchQuery(e.target.value)}
+                    style={{ minWidth: 220, paddingRight: menuSearchQuery ? 28 : undefined }}
+                  />
+                  {menuSearchQuery && (
+                    <button
+                      onClick={() => setMenuSearchQuery("")}
+                      title="Clear search"
+                      style={{
+                        position: "absolute",
+                        right: 6,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        color: "var(--muted)",
+                        padding: 2,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-            {categories.map((cat) => (
+            {menuSearchQueryNormalized && filteredMenuCategories.length === 0 && (
+              <div className="empty-state">
+                No items match &ldquo;{menuSearchQuery}&rdquo;.
+              </div>
+            )}
+            {filteredMenuCategories.map((cat) => (
               <div key={cat.id} style={{ marginBottom: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <h3 style={{ fontSize: 15, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", margin: 0 }}>
