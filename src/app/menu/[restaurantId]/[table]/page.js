@@ -6,6 +6,17 @@ import { io } from "socket.io-client";
 
 let SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000";
 
+// Pre-written per-dish special instructions. Customer can tap any number of these
+// (they get joined into that cart line's notes) and/or type their own on top.
+const INSTRUCTION_PRESETS = [
+  "More Spicy",
+  "Less Spicy",
+  "Extra Gravy",
+  "Dry (No Gravy)",
+  "Less Oil",
+  "No Onion/Garlic",
+];
+
 export default function CustomerMenuPage() {
   const { restaurantId, table } = useParams();
 
@@ -32,6 +43,11 @@ export default function CustomerMenuPage() {
   const [isParcelTable, setIsParcelTable] = useState(false);
   const [askingParcelLabel, setAskingParcelLabel] = useState(false);
   const [parcelLabelDraft, setParcelLabelDraft] = useState("");
+  // Special-instructions UI state: which cart row's instructions panel is expanded,
+  // and a local draft of each item's notes text (kept separate from cartItems so
+  // typing isn't interrupted by incoming "cart-updated" socket events).
+  const [openNotesFor, setOpenNotesFor] = useState(null); // menuItemId | null
+  const [noteDrafts, setNoteDrafts] = useState({}); // { [menuItemId]: string }
 
   // "checking" -> looking for existing sessions at this table
   // "choosing" -> multiple/one session already active here, customer must pick join/new
@@ -380,6 +396,43 @@ export default function CustomerMenuPage() {
     }
   }
 
+  // Persists a cart line's special instructions (delta: 0 leaves quantity untouched).
+  async function updateNotes(menuItemId, notes) {
+    if (!session) return;
+    try {
+      const res = await fetch("/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: session.id,
+          menuItemId,
+          delta: 0,
+          addedBy: name || "Guest",
+          notes,
+        }),
+      });
+      const data = await res.json();
+      if (data.cartItems) {
+        setCartItems(data.cartItems);
+      }
+    } catch (err) {
+      console.error("Failed to update instructions:", err);
+    }
+  }
+
+  // Toggles a preset phrase (e.g. "More Spicy") in a cart line's instructions text.
+  function toggleInstructionPreset(menuItemId, currentNotes, preset) {
+    const parts = (currentNotes || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const has = parts.some((p) => p.toLowerCase() === preset.toLowerCase());
+    const nextParts = has ? parts.filter((p) => p.toLowerCase() !== preset.toLowerCase()) : [...parts, preset];
+    const nextNotes = nextParts.join(", ");
+    setNoteDrafts((prev) => ({ ...prev, [menuItemId]: nextNotes }));
+    updateNotes(menuItemId, nextNotes);
+  }
+
   async function placeOrder() {
     if (!cartCount || !session || !isOwner) return;
     setPlacing(true);
@@ -387,6 +440,7 @@ export default function CustomerMenuPage() {
       menuItemId: ci.menuItemId,
       quantity: ci.quantity,
       addedBy: name || ci.addedBy || "Guest",
+      notes: ci.notes || undefined,
     }));
 
     try {
@@ -871,23 +925,91 @@ export default function CustomerMenuPage() {
             {cartItems.map((ci) => {
               const item = ci.menuItem || allItems.find((i) => i.id === ci.menuItemId);
               if (!item) return null;
+              const isNotesOpen = openNotesFor === ci.menuItemId;
+              const draft = noteDrafts[ci.menuItemId] !== undefined ? noteDrafts[ci.menuItemId] : ci.notes || "";
+              const selectedPresets = draft
+                .split(",")
+                .map((s) => s.trim().toLowerCase())
+                .filter(Boolean);
               return (
-                <div key={ci.menuItemId} className="cart-row">
-                  <div>
-                    <div className="cart-row-name">{item.name}</div>
-                    <div className="cart-row-by">
-                      ₹{item.price} × {ci.quantity} {ci.addedBy ? `· Added by ${ci.addedBy}` : ""}
+                <div key={ci.menuItemId} className="cart-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                    <div>
+                      <div className="cart-row-name">{item.name}</div>
+                      <div className="cart-row-by">
+                        ₹{item.price} × {ci.quantity} {ci.addedBy ? `· Added by ${ci.addedBy}` : ""}
+                      </div>
+                      {!isNotesOpen && ci.notes && (
+                        <div style={{ fontSize: 11.5, color: "var(--blue-700)", fontWeight: 700, marginTop: 2 }}>
+                          📝 {ci.notes}
+                        </div>
+                      )}
+                    </div>
+                    <div className="qty-control">
+                      <button className="qty-btn" onClick={() => updateQty(ci.menuItemId, -1)}>
+                        −
+                      </button>
+                      <span className="qty-num">{ci.quantity}</span>
+                      <button className="qty-btn" onClick={() => updateQty(ci.menuItemId, 1)}>
+                        +
+                      </button>
                     </div>
                   </div>
-                  <div className="qty-control">
-                    <button className="qty-btn" onClick={() => updateQty(ci.menuItemId, -1)}>
-                      −
-                    </button>
-                    <span className="qty-num">{ci.quantity}</span>
-                    <button className="qty-btn" onClick={() => updateQty(ci.menuItemId, 1)}>
-                      +
-                    </button>
-                  </div>
+
+                  <button
+                    onClick={() => setOpenNotesFor(isNotesOpen ? null : ci.menuItemId)}
+                    style={{
+                      alignSelf: "flex-start",
+                      marginTop: 6,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "var(--blue-700)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {isNotesOpen ? "Hide instructions ▲" : ci.notes ? "Edit instructions ✎" : "+ Add instructions"}
+                  </button>
+
+                  {isNotesOpen && (
+                    <div style={{ marginTop: 8, padding: 10, background: "var(--blue-50)", borderRadius: 10 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                        {INSTRUCTION_PRESETS.map((preset) => {
+                          const isSelected = selectedPresets.includes(preset.toLowerCase());
+                          return (
+                            <button
+                              key={preset}
+                              onClick={() => toggleInstructionPreset(ci.menuItemId, draft, preset)}
+                              style={{
+                                padding: "5px 10px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                border: isSelected ? "1.5px solid var(--blue-700)" : "1.5px solid var(--blue-100)",
+                                background: isSelected ? "var(--blue-700)" : "var(--surface-white)",
+                                color: isSelected ? "#fff" : "var(--navy-800)",
+                              }}
+                            >
+                              {isSelected ? "✓ " : ""}
+                              {preset}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input
+                        placeholder="Or type your own instructions…"
+                        value={draft}
+                        onChange={(e) =>
+                          setNoteDrafts((prev) => ({ ...prev, [ci.menuItemId]: e.target.value }))
+                        }
+                        onBlur={() => updateNotes(ci.menuItemId, draft)}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -946,6 +1068,11 @@ function OrderStatusCard({ order, onCancelItem }) {
                 {it.quantity}× {it.menuItem?.name}
                 {it.addedBy && <span style={{ color: "var(--muted)", fontSize: 12 }}> ({it.addedBy})</span>}
               </span>
+              {it.notes && (
+                <div style={{ fontSize: 11.5, color: "var(--blue-700)", fontWeight: 700, marginTop: 2 }}>
+                  📝 {it.notes}
+                </div>
+              )}
               {isCancelRequested && (
                 <div style={{ fontSize: 12, color: "var(--orange-600)", fontWeight: 700, marginTop: 2 }}>
                   ⏳ Cancellation requested

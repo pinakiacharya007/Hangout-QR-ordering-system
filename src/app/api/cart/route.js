@@ -26,11 +26,13 @@ export async function GET(req) {
 }
 
 // POST /api/cart
-// body: { sessionId, menuItemId, delta, addedBy }
+// body: { sessionId, menuItemId, delta, addedBy, notes }
+// notes is optional — when provided (including empty string, to clear it) it overwrites
+// the cart line's special instructions; when omitted, existing notes are preserved.
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { sessionId, menuItemId, delta = 0, addedBy = "Guest" } = body;
+    const { sessionId, menuItemId, delta = 0, addedBy = "Guest", notes } = body;
 
     if (!sessionId || !menuItemId) {
       return NextResponse.json({ error: "sessionId and menuItemId are required" }, { status: 400 });
@@ -44,6 +46,7 @@ export async function POST(req) {
 
     const currentQty = existing ? existing.quantity : 0;
     const newQty = Math.max(0, currentQty + delta);
+    const resolvedNotes = notes !== undefined ? (notes.trim() ? notes.trim() : null) : existing?.notes ?? null;
 
     if (newQty === 0) {
       if (existing) {
@@ -59,12 +62,14 @@ export async function POST(req) {
         update: {
           quantity: newQty,
           addedBy: addedBy || existing?.addedBy || "Guest",
+          notes: resolvedNotes,
         },
         create: {
           sessionId,
           menuItemId,
           quantity: newQty,
           addedBy: addedBy || "Guest",
+          notes: resolvedNotes,
         },
       });
     }
