@@ -89,7 +89,10 @@ export default function CustomerMenuPage() {
         savedSessionId = sessionStorage.getItem(storageKey());
       } catch (e) {}
 
-      const res = await fetch(`/api/session?restaurantId=${restaurantId}&tableNumber=${table}`);
+      const [res] = await Promise.all([
+        fetch(`/api/session?restaurantId=${restaurantId}&tableNumber=${table}`),
+        new Promise((r) => setTimeout(r, 900)),
+      ]);
       const data = await res.json();
       const options = data.activeSessions || [];
 
@@ -127,13 +130,9 @@ export default function CustomerMenuPage() {
     try {
       sessionStorage.setItem(storageKey(), newSession.id);
       const savedName = sessionStorage.getItem(nameKey());
-      if (savedName) {
-        setName(savedName);
-      } else {
-        setAskingName(true);
-      }
+      setName(savedName || "Guest");
     } catch (e) {
-      setAskingName(true);
+      setName("Guest");
     }
   }
 
@@ -431,10 +430,14 @@ export default function CustomerMenuPage() {
 
   const activeOrders = orders.filter((o) => o.status !== "served" && o.status !== "cancelled");
 
-  if (sessionStage === "checking") {
+ if (sessionStage === "checking") {
     return (
-      <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <p style={{ color: "var(--muted, #837568)" }}>Loading table {table}…</p>
+      <div className="container" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 16 }}>
+        <div className="splash-logo-pulse">
+          <img src="/logo.png" alt="" onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }} />
+          <span className="splash-logo-fallback">H</span>
+        </div>
+        <p style={{ color: "var(--muted, #837568)", fontWeight: 600 }}>Setting up Table {table}…</p>
       </div>
     );
   }

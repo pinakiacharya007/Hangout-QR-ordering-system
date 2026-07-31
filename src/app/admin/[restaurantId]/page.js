@@ -39,6 +39,7 @@ export default function AdminDashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [checkoutSessionId, setCheckoutSessionId] = useState(null);
   const [revenueRange, setRevenueRange] = useState("day");
   const [revenue, setRevenue] = useState(null);
 
@@ -218,20 +219,20 @@ export default function AdminDashboard() {
     }
   }
 
-  async function checkoutTable(sessionId) {
-    if (!confirm("Are you sure you want to close and reset this table session?")) return;
+  async function checkoutTable(sessionId, paymentMethod, lentToName) {
     const res = await fetch("/api/session", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({ sessionId, paymentMethod, lentToName }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       alert(data.error || `Failed to checkout table (status ${res.status})`);
-      return;
+      return false;
     }
     loadTables();
     loadOrders();
+    return true;
   }
 
   // Moves an ENTIRE session (customer's whole running bill, all their orders) to
@@ -468,6 +469,13 @@ export default function AdminDashboard() {
         {showAccountModal && (
           <AccountModal restaurantId={restaurantId} onClose={() => setShowAccountModal(false)} />
         )}
+        {checkoutSessionId && (
+          <CheckoutModal
+            sessionId={checkoutSessionId}
+            onClose={() => setCheckoutSessionId(null)}
+            onCheckout={checkoutTable}
+          />
+        )}
 
         {/* Admin Navigation Tabs */}
         <div className="admin-tabs">
@@ -654,7 +662,7 @@ export default function AdminDashboard() {
                             >
                               🔀 Move
                             </button>
-                            <button className="checkout-btn" style={{ flex: 1 }} onClick={() => checkoutTable(session.id)}>
+                            <button className="checkout-btn" style={{ flex: 1 }} onClick={() => setCheckoutSessionId(session.id)}>
                               💳 Checkout
                             </button>
                           </div>
@@ -833,10 +841,9 @@ export default function AdminDashboard() {
                 </button>
               ))}
             </div>
+
             <div className="order-batch" style={{ textAlign: "center", padding: 32 }}>
-              <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>
-                TOTAL REVENUE
-              </div>
+              <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>TOTAL REVENUE</div>
               <div style={{ fontSize: 40, fontWeight: 800, color: "var(--blue-700)" }}>
                 {revenue ? `₹${revenue.total.toLocaleString()}` : "—"}
               </div>
@@ -844,6 +851,90 @@ export default function AdminDashboard() {
                 {revenue ? `${revenue.orderCount} order${revenue.orderCount === 1 ? "" : "s"}` : ""}
               </div>
             </div>
+
+            {revenue?.paymentTotals && (
+              <div className="order-batch" style={{ padding: 20, marginTop: 16 }}>
+                <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>PAYMENT BREAKDOWN</div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  {[
+                    { key: "cash", label: "💵 Cash" },
+                    { key: "upi", label: "📱 UPI" },
+                    { key: "lend", label: "🤝 Lent" },
+                  ].map((p) => (
+                    <div key={p.key} style={{ flex: 1, textAlign: "center", padding: "12px 8px", background: "var(--surface-ice)", borderRadius: "var(--radius-md)" }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>{p.label}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>
+                        ₹{(revenue.paymentTotals[p.key] || 0).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {revenue.lentBreakdown?.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>LENT TO</div>
+                    {revenue.lentBreakdown.map((l, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13.5 }}>
+                        <span style={{ fontWeight: 600 }}>{l.name}</span>
+                        <span style={{ fontWeight: 700, color: "var(--nonveg)" }}>₹{l.amount.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {revenue?.buckets?.length > 0 && (
+              <div className="order-batch" style={{ padding: 20, marginTop: 16 }}>
+                <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>REVENUE TREND</div>
+                {(() => {
+                  const max = Math.max(1, ...revenue.buckets.map((b) => b.total));
+                  return (
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: revenueRange === "day" ? 2 : 6, height: 120, overflowX: "auto" }}>
+                      {revenue.buckets.map((b, i) => (
+                        <div
+                          key={i}
+                          title={`${b.label}: ₹${b.total.toLocaleString()}`}
+                          style={{ flex: "0 0 auto", width: revenueRange === "day" ? 8 : 22, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
+                        >
+                          <div style={{ width: "100%", height: 100, display: "flex", alignItems: "flex-end" }}>
+                            <div
+                              style={{
+                                width: "100%",
+                                height: `${Math.max(2, Math.round((b.total / max) * 100))}%`,
+                                background: b.total > 0 ? "var(--blue-500)" : "var(--blue-100)",
+                                borderRadius: 4,
+                                transition: "height 0.3s ease",
+                              }}
+                            />
+                          </div>
+                          {revenueRange !== "day" && (
+                            <div style={{ fontSize: 9, color: "var(--muted)", whiteSpace: "nowrap" }}>{b.label.slice(5)}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {revenue?.topItems?.length > 0 && (
+              <div className="order-batch" style={{ padding: 20, marginTop: 16 }}>
+                <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>TOP SELLING ITEMS</div>
+                {revenue.topItems.map((item, i) => (
+                  <div
+                    key={i}
+                    style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: i < revenue.topItems.length - 1 ? "1px solid var(--blue-100)" : "none" }}
+                  >
+                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                      {i + 1}. {item.name} <span style={{ color: "var(--muted)", fontWeight: 500 }}>× {item.qty}</span>
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--blue-700)" }}>₹{item.revenue.toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1061,7 +1152,7 @@ function QrTab({ origin, localIp, restaurantId, allTables, onTablesChange }) {
     }
   }
 
- const baseUrl = origin;
+  const baseUrl = origin;
 
   async function addTable() {
     if (!newTableNum.trim()) return alert("Enter a table number");
@@ -1244,6 +1335,73 @@ function QrTab({ origin, localIp, restaurantId, allTables, onTablesChange }) {
     </div>
   );
 }
+
+function CheckoutModal({ sessionId, onClose, onCheckout }) {
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [lentToName, setLentToName] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleConfirm() {
+    setError("");
+    if (paymentMethod === "lend" && !lentToName.trim()) {
+      setError("Enter the customer's name for a lent bill.");
+      return;
+    }
+    setSaving(true);
+    const ok = await onCheckout(sessionId, paymentMethod, lentToName.trim() || null);
+    setSaving(false);
+    if (ok) onClose();
+  }
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(20, 30, 50, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+      onClick={onClose}
+    >
+      <div className="order-batch" style={{ width: 340, maxWidth: "90vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>Checkout Table</div>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 16 }}>How was this bill settled?</p>
+
+        <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>Payment Method</label>
+        <select
+          value={paymentMethod}
+          onChange={(e) => setPaymentMethod(e.target.value)}
+          style={{ width: "100%", padding: "10px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--blue-100)", marginTop: 6, marginBottom: 14, fontSize: 14 }}
+        >
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="lend">Lend (pay later)</option>
+        </select>
+
+        {paymentMethod === "lend" && (
+          <>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>Customer Name</label>
+            <input
+              type="text"
+              value={lentToName}
+              onChange={(e) => setLentToName(e.target.value)}
+              placeholder="Who is this lent to?"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--blue-100)", marginTop: 6, marginBottom: 14, fontSize: 14 }}
+            />
+          </>
+        )}
+
+        {error && <p style={{ color: "var(--nonveg)", fontSize: 12.5, marginBottom: 10 }}>{error}</p>}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+          <button className="secondary-btn" style={{ flex: 1 }} onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button className="checkout-btn" style={{ flex: 1 }} onClick={handleConfirm} disabled={saving}>
+            {saving ? "Closing…" : "Confirm & Close Table"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AccountModal({ restaurantId, onClose }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");

@@ -26,6 +26,7 @@ model Table {
   restaurantId String
   restaurant   Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   number       Int
+  isParcel     Boolean        @default(false)
   // Combined-table billing: when set, this table is a MEMBER of a combined group and
   // groupId points at the PRIMARY table's id (the smallest table number in the group).
   // The primary table itself keeps groupId = null. All session/cart activity for any
@@ -50,6 +51,8 @@ model TableSession {
   orders          Order[]
   cartItems       CartItem[]
   reviews         Review[]
+  paymentMethod   String?   // "cash" | "upi" | "lend" — set at checkout
+  lentToName      String?   // customer's name, only when paymentMethod = "lend"
 
   @@index([tableId])
   @@index([status])

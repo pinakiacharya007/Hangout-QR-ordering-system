@@ -1,9 +1,6 @@
 import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
 
-// GET /api/revenue?restaurantId=xxx&range=day|week|month&date=YYYY-MM-DD
-// "date" anchors the range (defaults to today); day = that date, week = the 7 days
-// ending on that date, month = the calendar month containing that date.
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -30,31 +27,84 @@ export async function GET(req) {
       start = new Date(end);
       start.setDate(start.getDate() - 7);
     } else {
-      // month
       start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
       end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
     }
 
-    const orders = await prisma.order.findMany({
+    // Revenue counts when a table is actually checked out (paid), not when each
+    // order was placed — keeps the total consistent with the payment breakdown.
+    const sessions = await prisma.tableSession.findMany({
       where: {
-        session: { table: { restaurantId } },
-        status: { not: "cancelled" },
-        deletedAt: null,
-        createdAt: { gte: start, lt: end },
+        table: { restaurantId },
+        status: "completed",
+        closedAt: { gte: start, lt: end },
       },
-      include: { items: true },
+      include: {
+        orders: {
+          where: { status: { not: "cancelled" }, deletedAt: null },
+          include: { items: { include: { menuItem: true } } },
+        },
+      },
     });
 
     let total = 0;
     let orderCount = 0;
-    for (const order of orders) {
-      const validItems = order.items.filter((i) => i.status !== "cancelled" && i.status !== "rejected");
-      if (validItems.length === 0) continue;
-      orderCount += 1;
-      total += validItems.reduce((s, i) => s + (i.price ?? 0) * i.quantity, 0);
+    const bucketTotals = {};
+    const itemTotals = {};
+    const paymentTotals = { cash: 0, upi: 0, lend: 0, unspecified: 0 };
+    const lentTo = {};
+
+    for (const session of sessions) {
+      let sessionTotal = 0;
+      for (const order of session.orders) {
+        const validItems = order.items.filter((i) => i.status !== "cancelled" && i.status !== "rejected");
+        if (validItems.length === 0) continue;
+        orderCount += 1;
+        const orderTotal = validItems.reduce((s, i) => s + (i.price ?? 0) * i.quantity, 0);
+        sessionTotal += orderTotal;
+
+        for (const item of validItems) {
+          const key = item.menuItemId;
+          const name = item.name || item.menuItem?.name || "Unknown item";
+          if (!itemTotals[key]) itemTotals[key] = { name, qty: 0, revenue: 0 };
+          itemTotals[key].qty += item.quantity;
+          itemTotals[key].revenue += (item.price ?? 0) * item.quantity;
+        }
+      }
+
+      total += sessionTotal;
+      const method = session.paymentMethod || "unspecified";
+      paymentTotals[method] = (paymentTotals[method] || 0) + sessionTotal;
+      if (method === "lend" && session.lentToName) {
+        lentTo[session.lentToName] = (lentTo[session.lentToName] || 0) + sessionTotal;
+      }
+
+      const bucketKey =
+        range === "day"
+          ? String(session.closedAt.getHours()).padStart(2, "0") + ":00"
+          : session.closedAt.toISOString().slice(0, 10);
+      bucketTotals[bucketKey] = (bucketTotals[bucketKey] || 0) + sessionTotal;
     }
 
-    return NextResponse.json({ total, orderCount, range, start, end });
+    const buckets = [];
+    if (range === "day") {
+      for (let h = 0; h < 24; h++) {
+        const key = String(h).padStart(2, "0") + ":00";
+        buckets.push({ label: key, total: bucketTotals[key] || 0 });
+      }
+    } else {
+      const cursor = new Date(start);
+      while (cursor < end) {
+        const key = cursor.toISOString().slice(0, 10);
+        buckets.push({ label: key, total: bucketTotals[key] || 0 });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    const topItems = Object.values(itemTotals).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+    const lentBreakdown = Object.entries(lentTo).map(([name, amount]) => ({ name, amount }));
+
+    return NextResponse.json({ total, orderCount, range, start, end, buckets, topItems, paymentTotals, lentBreakdown });
   } catch (err) {
     console.error("GET /api/revenue error:", err);
     return NextResponse.json({ error: err.message || "Failed to compute revenue" }, { status: 500 });

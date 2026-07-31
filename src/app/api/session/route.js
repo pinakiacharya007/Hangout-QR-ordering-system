@@ -220,9 +220,21 @@ export async function PATCH(req) {
     }
 
     // Default: admin checkout — close the table and clear whatever's left in the cart
+    const { paymentMethod, lentToName } = body || {};
+    if (paymentMethod && !["cash", "upi", "lend"].includes(paymentMethod)) {
+      return NextResponse.json({ error: "Invalid paymentMethod" }, { status: 400 });
+    }
+    if (paymentMethod === "lend" && !lentToName?.trim()) {
+      return NextResponse.json({ error: "lentToName is required when paymentMethod is lend" }, { status: 400 });
+    }
     const session = await prisma.tableSession.update({
       where: { id: sessionId },
-      data: { status: "completed", closedAt: new Date() },
+      data: {
+        status: "completed",
+        closedAt: new Date(),
+        paymentMethod: paymentMethod || null,
+        lentToName: paymentMethod === "lend" ? lentToName.trim() : null,
+      },
       include: SESSION_INCLUDE,
     });
     await prisma.cartItem.deleteMany({ where: { sessionId } });
