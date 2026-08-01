@@ -12,9 +12,9 @@ const INSTRUCTION_PRESETS = [
   "More Spicy",
   "Less Spicy",
   "Extra Gravy",
-  "Dry (No Gravy)",
+  "Dry ",
+  "No gravy",
   "Less Oil",
-  "No Onion/Garlic",
 ];
 
 export default function CustomerMenuPage() {
