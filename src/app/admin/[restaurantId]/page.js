@@ -1041,6 +1041,7 @@ function DeletedOrderCard({ order }) {
       {order.items.map((i) => (
         <div key={i.id} style={{ fontSize: 13, color: "var(--navy-800)" }}>
           {i.quantity}x {i.name || i.menuItem?.name}
+          {i.notes && <span style={{ color: "var(--orange-700, #b45f14)" }}> — 📝 {i.notes}</span>}
         </div>
       ))}
       <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, marginTop: 8 }}>
@@ -1132,12 +1133,19 @@ function OrderCard({ order, isNew, onUpdate, onItemUpdate, onTransfer, onDelete 
       )}
 
       {activeItems.map((it) => (
-        <div key={it.id} className="order-item-line">
-          <span>
-            <strong>{it.quantity}×</strong> {it.name || it.menuItem?.name}
-            {it.addedBy && <span style={{ color: "var(--muted)", fontSize: 12 }}> ({it.addedBy})</span>}
-          </span>
-          <span style={{ fontWeight: 700 }}>₹{(it.price ?? it.menuItem?.price ?? 0) * it.quantity}</span>
+        <div key={it.id} className="order-item-line" style={{ flexDirection: "column", alignItems: "stretch" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>
+              <strong>{it.quantity}×</strong> {it.name || it.menuItem?.name}
+              {it.addedBy && <span style={{ color: "var(--muted)", fontSize: 12 }}> ({it.addedBy})</span>}
+            </span>
+            <span style={{ fontWeight: 700 }}>₹{(it.price ?? it.menuItem?.price ?? 0) * it.quantity}</span>
+          </div>
+          {it.notes && (
+            <div style={{ fontSize: 12, color: "var(--orange-700, #b45f14)", background: "var(--orange-50, #fef3e8)", padding: "4px 8px", borderRadius: 6, marginTop: 4 }}>
+              📝 {it.notes}
+            </div>
+          )}
         </div>
       ))}
 
