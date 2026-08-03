@@ -394,10 +394,10 @@ export default function AdminDashboard() {
                   e.target.nextSibling.style.display = "flex";
                 }}
               />
-              <span className="admin-logo-fallback">T</span>
+              <span className="admin-logo-fallback">H</span>
             </div>
             <div>
-              <div className="admin-title">TableTap</div>
+              <div className="admin-title">Hangout Restro Cafe</div>
               <div className="admin-sub">Admin Command Center · Real-time socket sync</div>
             </div>
           </div>
