@@ -1,28 +1,29 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* Color Palette - TableTap: Cool Blue, Black & White */
-  --bg-customer: #2563eb;
-  --bg-admin: #f4f7fb;
+  /* Color Palette - Hangout Restro Cafe: Warm Gold, Black & White */
+  --bg-customer: #f4a300;
+  --bg-admin: #f6f4ed;
   --surface-white: #ffffff;
-  --surface-ice: #eaf2fb;
-  --surface-clay: #f3f8fd;
+  --surface-ice: #fbf1d2;
+  --surface-clay: #fdf9ec;
 
-  /* "--blue-*" names now hold real blue tones (restored to match the name) —
-     deep, saturated shades only, nothing pale/pastel. */
-  --blue-50: #eaf2fb;
-  --blue-100: #cfe3f7;
-  --blue-200: #a3c9ef;
-  --blue-400: #4a86d6;
-  --blue-500: #2f6fed;
-  --blue-600: #2358c4;
-  --blue-700: #1c4696;
-  --blue-900: #122a5c;
+  /* "--blue-*" names kept as-is (used throughout every component's inline styles) but
+     now hold the brand's gold/mustard tones instead of blue — deep, saturated shades
+     only, nothing pale/pastel, per brand guidance. */
+  --blue-50: #fbf3da;
+  --blue-100: #f5e6b8;
+  --blue-200: #e9cf80;
+  --blue-400: #d4a017;
+  --blue-500: #c99a00;
+  --blue-600: #b8860b;
+  --blue-700: #8c6900;
+  --blue-900: #3d2e00;
 
-  --navy-900: #12151c;
-  --navy-800: #202634;
-  --navy-700: #343d52;
-  --muted: #6b7280;
+  --navy-900: #161412;
+  --navy-800: #262320;
+  --navy-700: #3d3934;
+  --muted: #756e60;
 
   --veg: #059669;
   --veg-bg: #ecfdf5;
