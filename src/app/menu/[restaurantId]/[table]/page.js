@@ -537,7 +537,7 @@ export default function CustomerMenuPage() {
       <div className="container" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 16 }}>
         <div className="splash-logo-pulse">
           <img src="/logo.png" alt="" onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }} />
-          <span className="splash-logo-fallback">H</span>
+          <span className="splash-logo-fallback">T</span>
         </div>
         <p style={{ color: "var(--muted, #837568)", fontWeight: 600 }}>Setting up Table {table}…</p>
       </div>
@@ -551,9 +551,9 @@ export default function CustomerMenuPage() {
           <div className="brand">
             <div className="brand-icon">
               <img src="/logo.png" alt="" onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }} />
-              <span className="brand-icon-fallback">H</span>
+              <span className="brand-icon-fallback">T</span>
             </div>
-            Hangout Restro Cafe
+            TableTap
           </div>
           <div className="table-chip">Table {table}</div>
         </div>
@@ -605,9 +605,9 @@ export default function CustomerMenuPage() {
           <div className="brand">
             <div className="brand-icon">
               <img src="/logo.png" alt="" onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }} />
-              <span className="brand-icon-fallback">H</span>
+              <span className="brand-icon-fallback">T</span>
             </div>
-            Hangout Restro Cafe
+            TableTap
           </div>
           <div className="table-chip" style={{ background: "var(--orange-500, #ea7c1f)", color: "#fff" }}>📦 Parcel</div>
         </div>
@@ -654,9 +654,9 @@ export default function CustomerMenuPage() {
         <div className="brand">
           <div className="brand-icon">
             <img src="/logo.png" alt="" onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }} />
-            <span className="brand-icon-fallback">H</span>
+            <span className="brand-icon-fallback">T</span>
           </div>
-          Hangout Restro Cafe
+          TableTap
         </div>
         <div className="table-chip">Table {currentTableNumber}</div>
       </div>
