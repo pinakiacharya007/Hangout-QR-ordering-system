@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Hangout Restro Cafe",
+  title: "TableTap",
   description: "Scan. Order. Done.",
 };
 

@@ -48,9 +48,9 @@ function LoginForm() {
               e.target.nextSibling.style.display = "flex";
             }}
           />
-          <span className="admin-logo-fallback">H</span>
+          <span className="admin-logo-fallback">T</span>
         </div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--navy-900)" }}>Hangout Restro Cafe</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--navy-900)" }}>TableTap</div>
         <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600, marginTop: 2 }}>Admin Login</div>
       </div>
 
