@@ -192,17 +192,29 @@ export default function AdminDashboard() {
   }, [restaurantId, soundEnabled]);
 
   async function updateOrderStatus(orderId, status) {
-    const res = await fetch(`/api/orders/${orderId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, restaurantId }),
-    });
-    const data = await res.json();
-    if (data.order) {
-      setOrders((prev) => prev.map((o) => (o.id === data.order.id ? data.order : o)));
+  const res = await fetch(`/api/orders/${orderId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, restaurantId }),
+  });
+  const data = await res.json();
+  if (data.order) {
+    setOrders((prev) => prev.map((o) => (o.id === data.order.id ? data.order : o)));
+
+    // Print KOT only on the pending → accepted transition, not every later status change.
+    if (status === "accepted" && window.AndroidPrint) {
+      const o = data.order;
+      const isParcel = o.session?.table?.isParcel;
+      window.AndroidPrint.printKOT(JSON.stringify({
+        tableLabel: isParcel ? `Parcel${o.session?.parcelLabel ? " — " + o.session.parcelLabel : ""}` : `Table ${o.session?.table?.number}`,
+        items: o.items
+          .filter((i) => i.status !== "cancelled" && i.status !== "rejected")
+          .map((i) => ({ qty: i.quantity, name: i.name || i.menuItem?.name, notes: i.notes || null })),
+        time: new Date(o.createdAt).toLocaleTimeString(),
+      }));
     }
   }
-
+}
   // Approve/reject a customer's cancel-request, or accept/reject an item directly.
   // Applies the response immediately so the dashboard doesn't depend purely on the
   // socket broadcast reaching back to this same admin device.
@@ -220,19 +232,43 @@ export default function AdminDashboard() {
     }
   }
 
-  async function checkoutTable(sessionId, paymentMethod, lentToName) {
-    const res = await fetch("/api/session", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, paymentMethod, lentToName }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      alert(data.error || `Failed to checkout table (status ${res.status})`);
-      return false;
-    }
-    loadTables();
-    loadOrders();
+async function checkoutTable(sessionId, paymentMethod, lentToName) {
+  // Build the bill payload BEFORE the checkout call — once checkout succeeds,
+  // this session's orders may no longer be in the "active" `orders` state.
+  const sessionOrders = orders.filter((o) => o.session?.id === sessionId);
+  const billItems = sessionOrders.flatMap((o) =>
+    o.items
+      .filter((i) => i.status !== "cancelled" && i.status !== "rejected")
+      .map((i) => ({ qty: i.quantity, name: i.name || i.menuItem?.name, price: i.price ?? i.menuItem?.price ?? 0 }))
+  );
+  const billTotal = billItems.reduce((sum, i) => sum + i.price * i.qty, 0);
+  const tableLabel = sessionOrders[0]?.session?.table?.number
+    ? `Table ${sessionOrders[0].session.table.number}`
+    : "Parcel";
+
+  const res = await fetch("/api/session", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, paymentMethod, lentToName }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.error || `Failed to checkout table (status ${res.status})`);
+    return false;
+  }
+
+  if (window.AndroidPrint) {
+    window.AndroidPrint.printBill(JSON.stringify({
+      tableLabel,
+      items: billItems,
+      total: billTotal,
+      paymentMethod,
+      time: new Date().toLocaleTimeString(),
+    }));
+  }
+
+  loadTables();
+  loadOrders();
     return true;
   }
 
